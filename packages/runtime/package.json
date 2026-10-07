@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/runtime",
+  "version": "0.1.0",
+  "description": "Nexora durable task runtime, canonical run ledger, and scheduler authority",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}

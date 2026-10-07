@@ -1,0 +1,25 @@
+# Dependencies and caches
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.local
+*.local
+*.pem
+*.key
+
+# Nested upstream repositories (managed independently with their own git histories)
+repos/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+*.log
+.agent/
+.system_generated/
