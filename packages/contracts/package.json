@@ -1,0 +1,7 @@
+{
+  "name": "@nexora/contracts",
+  "version": "0.1.0",
+  "description": "Frozen architectural contracts and interfaces for Nexora engines, providers, budgets, and governance",
+  "type": "module",
+  "main": "src/index.ts"
+}
