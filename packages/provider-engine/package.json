@@ -1,0 +1,13 @@
+{
+  "name": "@nexora/provider-engine",
+  "version": "0.1.0",
+  "description": "Direct Gemini 3.8 Flash engine provider for Nexora",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/gemini-engine.test.ts"
+  },
+  "dependencies": {
+    "@nexora/contracts": "file:../contracts"
+  }
+}
