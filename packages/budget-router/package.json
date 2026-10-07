@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/budget-router",
+  "version": "0.1.0",
+  "description": "Nexora free-only capability router, atomic token reservation manager, and 429 backoff scheduler",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/budget-router.test.ts"
+  }
+}
