@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/verifier",
+  "version": "0.1.0",
+  "description": "Nexora independent verifier, contract auditor, and Phase 2 challenge test suites",
+  "type": "module",
+  "main": "src/auditor.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}
