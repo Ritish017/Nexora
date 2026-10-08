@@ -194,13 +194,18 @@ export class GeminiEngine implements Engine {
         parts: userParts,
       });
 
+      const generationConfig: Record<string, unknown> = {};
+      if (effort === "none" || effort === "low") {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      } else if (effort === "high") {
+        generationConfig.thinkingConfig = { thinkingBudget: 8192 };
+      } else {
+        generationConfig.thinkingConfig = { thinkingBudget: 2048 };
+      }
+
       const requestBody: Record<string, unknown> = {
         contents,
-        generationConfig: {
-          thinkingConfig: {
-            thinkingBudget,
-          },
-        },
+        generationConfig,
       };
 
       if (input.instructions) {
@@ -221,12 +226,22 @@ export class GeminiEngine implements Engine {
         headers["x-goog-api-key"] = key;
       }
 
-      const response = await this.fetchFn(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+      let response: Response | undefined;
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        response = await this.fetchFn(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        if (response.ok || (response.status !== 503 && response.status !== 429) || attempt === maxRetries) {
+          break;
+        }
+        // Transient spike backoff
+        await new Promise((r) => setTimeout(r, 2000 * Math.pow(1.5, attempt)));
+      }
 
       rawResponseBody = response.body;
 

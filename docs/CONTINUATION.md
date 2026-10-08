@@ -44,11 +44,18 @@
   - 10/10 automated tests passing (`packages/runtime/tests/phase1-vertical-slice.test.ts`).
   - Task #1 executed against `data/nexora.db`, generating verified artifact `artifacts/phase1_verification_report.md` (SHA-256: `915f2a2937b9958e597af6243320a09506b9fe0aedb9bfac5e77cddf984931a8`).
   - Restart recovery proven: database reopened, task state (`completed`), 7 monotonic events, and artifact reference verified intact.
-- [ ] **Phase 2: Direct API Engine, Free-Only Routing & Budgets** (CURRENT GATE)
-  - Add Direct API Engine behind Perry's `Engine` contract (`gemini-3.8-flash`).
-  - Implement zero-paid fallback and zero credit overages policy.
-  - Enforce atomic token reservations and HTTP 429 backoff queue.
-- [ ] **Phase 3: OpenDots Workspace & Local Conversation Adapter** (PENDING)
+- [x] **Phase 2: Direct API Engine, Free-Only Routing & Budgets** (PASSED)
+  - Contracts established in `packages/contracts` (engine, provider, budget, quota, governed tools).
+  - Implemented `GeminiEngine` in `packages/provider-engine` implementing Perry `Engine` contract with streaming events, token usage tracking, and tool approval routing.
+  - Implemented `packages/budget-router` with strict `free-only` policy throwing `DisallowedPaidEndpointError` on paid/unknown models, atomic reservation/reconciliation lifecycle, and non-blocking 429 jittered exponential backoff scheduler.
+  - Independent verification in `packages/verifier` passing 30 audit & challenge tests.
+  - Combined test suite across 4 packages: 87/87 tests passed.
+  - Live vertical slice executed with `gemini-3.8-flash` in `scripts/run-phase2-slice.ts`, producing verified artifact `artifacts/phase2_verification_report.md` (SHA-256: `dcbdc6b919e53559cea3f58d69ac0b6e9a555f9d1b6344fc21acea2da0c97749`).
+  - Restart recovery proven: database reopened, task state (`completed`), 15 monotonic events, and artifact reference verified intact.
+- [ ] **Phase 3: OpenDots Workspace & Local Conversation Adapter** (CURRENT GATE)
+  - Inspect `repos/opendots` client, components, page store, and review cards.
+  - Build local profile event adapter in `packages/workspace-adapter` connecting OpenDots UI directly to Perry task/run API without cloud CopilotKit Intelligence.
+  - Map owner/project/dot/page IDs and preserve revision-checked optimistic concurrency on pages.
 - [ ] **Phase 4: Governed OpenBot Computers & Action Policy** (PENDING)
 - [ ] **Phase 5: Engine Adapters & Multi-Host MCP Server** (PENDING)
 - [ ] **Phase 6: Remote Access Fleet & Runner Leases** (PENDING)
@@ -58,13 +65,10 @@
 
 ---
 
-## 4. First Incomplete Gate: Phase 2 (Direct API Engine & Free-Only Routing)
+## 4. First Incomplete Gate: Phase 3 (OpenDots Workspace & Local Conversation Adapter)
 
 ### Immediate Next Actions:
-1. Implement `packages/runtime/src/direct-engine.ts` supporting `gemini-3.8-flash` via official Gemini API / `@google/genai` or direct HTTP interface using `GEMINI_API_KEY`.
-2. Implement Model Registry and Router enforcing:
-   - Free-only routing mode: zero-paid fallback, zero credit overages.
-   - Cost estimation & atomic quota reservations.
-   - 429 rate limit detection and bounded exponential backoff.
-3. Add tests verifying free-only guard blocks paid requests and 429 response is queued properly.
-4. Execute live direct API turn with `gemini-3.8-flash` confirming structured output/tool call capability.
+1. Create `packages/workspace-adapter` bridging OpenDots workspace UI (Spaces, page canvas, review cards) to Perry's canonical run/event API.
+2. Establish local conversation profile that renders real streamed events from Perry without requiring paid CopilotKit Intelligence service.
+3. Validate optimistic revision checks on document pages (`version` field mismatch rejected with draft recoverable).
+4. Run browser / integration tests verifying task stream rendering and page persistence.
