@@ -5,9 +5,9 @@
 - **Model**: `gemini-3.8-flash` (Gemini 3.8 Flash)
 - **Provider Protocol**: `gemini-rest`
 - **Routing Mode**: `free-only` (Zero Paid Fallback & Zero Credit Overages Enforced)
-- **Turn Duration**: `7411 ms`
-- **Token Usage**: Input: 46, Output: 23, Total: 69
-- **Timestamp**: `2026-10-08T12:28:20.441Z`
+- **Turn Duration**: `7426 ms`
+- **Token Usage**: Input: 46, Output: 26, Total: 306
+- **Timestamp**: `2026-10-08T18:28:35.735Z`
 
 ---
 
@@ -23,5 +23,5 @@
 
 ## 2. Model Output Sample
 ```json
-{"project":"Nexora","model":"Direct API","phase":2,"status":"completed","verified":true}
+{"project":"Nexora","model":"Nexora-v2","phase":2,"status":"passed","verified":true}
 ```

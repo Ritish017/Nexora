@@ -17,6 +17,17 @@ build/
 # Nested upstream repositories (managed independently with their own git histories)
 repos/
 
+# Local databases and worktrees
+data/
+*.db
+*.db-wal
+*.db-shm
+.worktrees/
+
+# User blueprint archives
+*.zip
+Hybrid-Agent-Blueprint/
+
 # OS and IDE files
 .DS_Store
 Thumbs.db
