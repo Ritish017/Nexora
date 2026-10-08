@@ -41,7 +41,7 @@ const fleetManager = new FleetManager();
 
 // Initialize default document workspace if none exists
 try {
-  let spaces = pageStore.listSpaces("local-owner");
+  let spaces = pageStore.db.prepare("SELECT * FROM spaces WHERE ownerId = ?").all("local-owner") as any[];
   let defaultSpaceId = spaces[0]?.id;
   if (!defaultSpaceId) {
     const space = pageStore.createSpace("local-owner", "Default Workspace");
@@ -324,11 +324,13 @@ const server = createServer(async (req, res) => {
 
   // --- API: Status ---
   if (method === "GET" && url.pathname === "/api/status") {
-    const runs = db.listRecentRuns(5);
-    const activeRun = runs.find((r) => r.status === "running" || r.status === "waiting_for_approval");
-    const approvals = db.listPendingApprovals();
-    const spaces = pageStore.listSpaces("local-owner");
-    const pages = spaces[0] ? pageStore.listPages(spaces[0].id) : [];
+    const activeRuns = db.listActiveRuns();
+    const activeRun = activeRuns[0] ?? null;
+    const approvalRows = db.db.prepare("SELECT doc FROM approvals WHERE status = 'pending' ORDER BY expiry ASC").all() as Array<{ doc: string }>;
+    const approvals = approvalRows.map((r) => JSON.parse(r.doc));
+    const spaces = pageStore.db.prepare("SELECT * FROM spaces WHERE ownerId = ?").all("local-owner") as any[];
+    const pages = spaces[0] ? pageStore.listPagesInSpace(spaces[0].id) : [];
+    const tasks = db.listTasks().slice(0, 10);
 
     return sendJson(res, 200, {
       status: "ok",
@@ -339,23 +341,26 @@ const server = createServer(async (req, res) => {
       activeRun,
       pendingApproval: approvals[0] ?? null,
       pageCount: pages.length,
+      tasks,
     });
   }
 
   // --- API: Pages ---
   if (method === "GET" && url.pathname === "/api/pages") {
-    const spaces = pageStore.listSpaces("local-owner");
-    const pages = spaces[0] ? pageStore.listPages(spaces[0].id) : [];
+    const spaces = pageStore.db.prepare("SELECT * FROM spaces WHERE ownerId = ?").all("local-owner") as any[];
+    const pages = spaces[0] ? pageStore.listPagesInSpace(spaces[0].id) : [];
     return sendJson(res, 200, { spaces, pages });
   }
 
   if (method === "POST" && url.pathname === "/api/pages") {
     const body = await parseJsonBody(req);
-    const spaces = pageStore.listSpaces("local-owner");
+    const spaces = pageStore.db.prepare("SELECT * FROM spaces WHERE ownerId = ?").all("local-owner") as any[];
     const spaceId = spaces[0]?.id || pageStore.createSpace("local-owner", "Default").id;
 
     if (body.id) {
-      const updated = pageStore.updatePage(body.id, {
+      const updated = pageStore.updatePage({
+        id: body.id,
+        ownerId: "local-owner",
         title: body.title,
         content: body.content,
         expectedRevision: body.expectedRevision,
@@ -419,15 +424,17 @@ const server = createServer(async (req, res) => {
     const task = db.getTask(taskId);
     if (!task) return sendJson(res, 404, { error: "Task not found" });
 
-    const runs = db.listRunsForTask(taskId);
+    const runRows = db.db.prepare("SELECT doc FROM runs WHERE taskId = ? ORDER BY startedAt ASC").all(taskId) as Array<{ doc: string }>;
+    const runs = runRows.map((r) => JSON.parse(r.doc));
     const latestRun = runs[runs.length - 1];
     let events: any[] = [];
     let artifactContent: string | null = null;
     let artifactMeta: any = null;
 
     if (latestRun) {
-      events = db.listEventsForRun(latestRun.id);
-      const artifacts = db.listArtifactsForRun(latestRun.id);
+      events = db.getEvents(latestRun.id);
+      const artRows = db.db.prepare("SELECT doc FROM artifacts WHERE runId = ?").all(latestRun.id) as Array<{ doc: string }>;
+      const artifacts = artRows.map((r) => JSON.parse(r.doc));
       if (artifacts[0]) {
         artifactMeta = artifacts[0];
         try {
