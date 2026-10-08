@@ -154,6 +154,13 @@ export class GeminiEngine implements Engine {
 
       // Check key configuration
       const key = this.apiKey ?? process.env.GEMINI_API_KEY;
+      if (!key || key.trim().length === 0) {
+        return {
+          outcome: "failed",
+          text: "No GEMINI_API_KEY configured",
+          error: "AUTH_MISSING_KEY: GEMINI_API_KEY is required to execute turns.",
+        };
+      }
 
       const model = input.model ?? this.defaultModel;
       const effort = input.effort ?? "medium";

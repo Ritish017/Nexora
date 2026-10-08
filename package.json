@@ -1,0 +1,12 @@
+{
+  "name": "nexora",
+  "version": "0.1.0",
+  "description": "Nexora: Sovereign, crash-resilient hybrid personal agent operating system",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types scripts/demo-server.ts",
+    "demo": "node --experimental-strip-types scripts/demo-server.ts",
+    "test": "node --experimental-strip-types --test packages/*/tests/*.test.ts tests/*.test.ts",
+    "slice": "node --experimental-strip-types scripts/run-phase2-slice.ts"
+  }
+}

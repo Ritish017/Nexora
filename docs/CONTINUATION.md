@@ -96,7 +96,28 @@
 
 All blueprint phases (Phases 0 through 9) have been implemented, tested, and verified:
 - Total Packages: 10 (`contracts`, `runtime`, `provider-engine`, `budget-router`, `verifier`, `workspace-adapter`, `governance`, `mcp-server`, `runner-fleet`, `proactivity`, `channels`)
-- Total Automated Tests: 146 / 146 passing (`node --experimental-strip-types --test packages/*/tests/*.test.ts tests/*.test.ts`)
+- Total Automated Tests: 149 / 149 passing (`node --experimental-strip-types --test packages/*/tests/*.test.ts tests/*.test.ts`)
 - Zero Paid Fallbacks & Zero Credit Overages: Enforced across all layers
 - Upstream Licensing & Attribution: Untouched licenses and MIT/Apache notices preserved
 - Host Startup: Verified runnable via `scripts/start.ps1` and `scripts/start.sh`
+
+---
+
+## 5. Local Demo Console & Quick-Start Trial
+
+- **Entrypoint**: `package.json` -> `"npm start"` or `"npm run demo"` (`node --experimental-strip-types scripts/demo-server.ts`)
+- **Web UI & REST API**: Native Node HTTP server (`http://127.0.0.1:3000`)
+- **Local Demo Mode**:
+  - Requires **zero API keys** and zero external network calls.
+  - Demonstrates: `"Create a short introduction to Nexora."`
+  - Emits real-time worker events, presents a pending action approval card for file modification, and upon approval creates a deterministic, SHA-256 verified artifact (`artifacts/nexora_intro_demo.md`).
+  - Labeled clearly as a demo across all UI screens, logs, and metadata.
+- **Strict Real AI Mode Isolation**:
+  - Live AI mode is strictly separated; enabled only when `GEMINI_API_KEY` is verified in the environment.
+  - Free-only routing policy enforced with atomic token reservation and reconciliation.
+  - Never substitutes demo output for failed AI execution.
+- **Restart Persistence**:
+  - SQLite document store retains tasks, runs, approvals, events, and artifacts across restarts.
+- **Automated Verification**:
+  - `tests/demo-flow.test.ts` (3/3 tests passing).
+
