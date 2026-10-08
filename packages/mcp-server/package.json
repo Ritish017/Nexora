@@ -1,0 +1,13 @@
+{
+  "name": "@nexora/mcp-server",
+  "version": "0.1.0",
+  "description": "Unified Multi-Host MCP Server for Antigravity, Codex, and Claude",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "nexora-mcp": "src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}

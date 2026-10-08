@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/governance",
+  "version": "0.1.0",
+  "description": "Nexora Governance: OpenBot computer supervisor bridge, cryptographic HMAC credentials, and action policy enforcement",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}

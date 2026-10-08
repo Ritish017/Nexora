@@ -1,0 +1,12 @@
+{
+  "mcp_servers": [
+    {
+      "name": "nexora",
+      "command": "node",
+      "args": ["--experimental-strip-types", "C:\\AI-Projects\\Nexora\\packages\\mcp-server\\src\\cli.ts"],
+      "env": {
+        "NEXORA_DB_PATH": "C:\\AI-Projects\\Nexora\\data\\nexora.db"
+      }
+    }
+  ]
+}

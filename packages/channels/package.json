@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/channels",
+  "version": "0.1.0",
+  "description": "Nexora Channels: Telegram bot adapter, human-readable approval cards, and system state UX",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}

@@ -151,6 +151,17 @@ export class NexoraDatabase {
     return rows.map((r) => JSON.parse(r.doc));
   }
 
+  listTasks(status?: string): TaskRecord[] {
+    if (status) {
+      const stmt = this.db.prepare(`SELECT doc FROM tasks WHERE status = ? ORDER BY createdAt DESC`);
+      const rows = stmt.all(status) as Array<{ doc: string }>;
+      return rows.map((r) => JSON.parse(r.doc));
+    }
+    const stmt = this.db.prepare(`SELECT doc FROM tasks ORDER BY createdAt DESC`);
+    const rows = stmt.all() as Array<{ doc: string }>;
+    return rows.map((r) => JSON.parse(r.doc));
+  }
+
   // --- Run Methods ---
 
   insertRun(run: RunRecord): void {

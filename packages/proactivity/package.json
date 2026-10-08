@@ -1,0 +1,10 @@
+{
+  "name": "@nexora/proactivity",
+  "version": "0.1.0",
+  "description": "Nexora Goals, Schedules, Quiet Heartbeat, and Bounded Subagent Delegation",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}
