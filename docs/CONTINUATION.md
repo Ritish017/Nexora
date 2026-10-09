@@ -121,3 +121,21 @@ All blueprint phases (Phases 0 through 9) have been implemented, tested, and ver
 - **Automated Verification**:
   - `tests/demo-flow.test.ts` (3/3 tests passing).
 
+---
+
+## 6. Conversational Autonomous Agent (Live Natural Language + Local Computer Tools)
+
+- **Architecture**: `packages/runtime/src/agent-session.ts`
+- **Capabilities**:
+  - Conversational multi-turn memory.
+  - Autonomous system tools: `get_system_info`, `list_directory`, `read_file`, `write_file`, `exec_command`.
+  - Autonomous tool loop: Agent inspects host, runs commands, reads files, and formulates natural language responses.
+  - Governed security boundary: Dangerous commands (`rm -rf`, disk wipes, fork bombs) are blocked by `PolicyEngine`.
+- **Surfaces**:
+  - **Web Console Chat**: Real-time interactive chat at `http://127.0.0.1:3000` with expandable tool execution badges and reactive on-screen mascot.
+  - **Interactive Terminal REPL**: `npm run chat` (`scripts/chat.ts`) for direct PowerShell / Terminal interaction.
+- **Automated Verification**:
+  - `packages/runtime/tests/agent-session.test.ts` (4/4 tests passing).
+  - **153 / 153 total automated tests passing across the repository**.
+
+

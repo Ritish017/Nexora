@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node --experimental-strip-types scripts/demo-server.ts",
     "demo": "node --experimental-strip-types scripts/demo-server.ts",
+    "chat": "node --experimental-strip-types scripts/chat.ts",
     "test": "node --experimental-strip-types --test packages/*/tests/*.test.ts tests/*.test.ts",
     "slice": "node --experimental-strip-types scripts/run-phase2-slice.ts"
   }

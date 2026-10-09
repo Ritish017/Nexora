@@ -2,9 +2,9 @@
  * Nexora Sovereign Interactive Operating Console & Agent Server
  * 
  * Provides a unified local graphical environment showcasing ALL Nexora capabilities:
+ * - Natural Language Conversational Agent (lives on host computer with real tool loop)
  * - Living On-Screen Agent Mascot with reactive animations and real-time speech/thought stream
- * - Real AI Mode (Gemini 3.8 Flash with free-only routing and streaming tokens)
- * - Local Demo Mode (Zero API keys needed, deterministic SHA-256 output)
+ * - Real AI Mode (Gemini 2.5 / 3.8 Flash with free-only routing and autonomous tools)
  * - Interactive Document Canvas (OpenDots revision-checked pages with optimistic concurrency)
  * - Governed Computer Sandbox (OpenBot action policy engine, HMAC credential derivation, terminal simulation)
  * - Multi-Host MCP Hub (Configs for Antigravity, Claude Desktop, and Codex)
@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 
-import { NexoraDatabase, TaskService } from "../packages/runtime/src/index.ts";
+import { NexoraDatabase, TaskService, AgentSession } from "../packages/runtime/src/index.ts";
 import { GeminiEngine } from "../packages/provider-engine/src/index.ts";
 import { BudgetRouter, ReservationManager } from "../packages/budget-router/src/index.ts";
 import { PageStore } from "../packages/workspace-adapter/src/index.ts";
@@ -38,6 +38,7 @@ const reservationMgr = new ReservationManager();
 const pageStore = new PageStore(db.db);
 const policyEngine = new PolicyEngine({ mode: "supervised" });
 const fleetManager = new FleetManager();
+const agentSession = new AgentSession();
 
 // Initialize default document workspace if none exists
 try {
@@ -105,7 +106,6 @@ async function processTask(taskId: string, mode: "demo" | "live", requireApprova
 
   try {
     if (mode === "demo") {
-      // 1. Initialized
       taskService.emitEvent(runId, "item_started", {
         item: "demo_turn",
         label: "Starting Local Demo execution...",
@@ -117,7 +117,6 @@ async function processTask(taskId: string, mode: "demo" | "live", requireApprova
         message: "Compiling deterministic introduction content...",
       });
 
-      // 2. Gated approval check if requested
       if (requireApproval) {
         taskService.requestApproval(
           runId,
@@ -134,16 +133,13 @@ async function processTask(taskId: string, mode: "demo" | "live", requireApprova
         return;
       }
 
-      // 3. Complete demo execution
       await finishDemoExecution(runId, taskId);
     } else {
-      // Live Mode execution
       if (!hasApiKey) {
         taskService.failRun(runId, "Live AI mode requires GEMINI_API_KEY to be set in your system environment.");
         return;
       }
 
-      // Free-only route validation
       const model = budgetRouter.route();
       const reservation = reservationMgr.reserve({
         runId,
@@ -345,6 +341,35 @@ const server = createServer(async (req, res) => {
     });
   }
 
+  // --- API: Conversational Agent Chat ---
+  if (method === "GET" && url.pathname === "/api/chat") {
+    return sendJson(res, 200, { messages: agentSession.messages });
+  }
+
+  if (method === "POST" && url.pathname === "/api/chat") {
+    const body = await parseJsonBody(req);
+    const userMessage = String(body.message || "").trim();
+    if (!userMessage) {
+      return sendJson(res, 400, { error: "Message cannot be empty." });
+    }
+
+    try {
+      const result = await agentSession.chat(userMessage);
+      return sendJson(res, 200, {
+        response: result.response,
+        toolCalls: result.toolCalls,
+        messages: agentSession.messages,
+      });
+    } catch (err: any) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
+  if (method === "POST" && url.pathname === "/api/chat/clear") {
+    agentSession.clear();
+    return sendJson(res, 200, { status: "cleared", messages: [] });
+  }
+
   // --- API: Pages ---
   if (method === "GET" && url.pathname === "/api/pages") {
     const spaces = pageStore.db.prepare("SELECT * FROM spaces WHERE ownerId = ?").all("local-owner") as any[];
@@ -406,7 +431,6 @@ const server = createServer(async (req, res) => {
       input: { mode, requireApproval },
     });
 
-    // Spawn async worker loop
     setImmediate(() => {
       processTask(submission.task.id, mode, requireApproval);
     });
@@ -462,7 +486,6 @@ const server = createServer(async (req, res) => {
 
     const resolved = taskService.resolveApproval(approvalId, approved, "owner-console");
 
-    // If approved, complete the run
     if (approved) {
       const pendingLive = pendingLiveCompletions.get(resolved.run.id);
       if (pendingLive) {
@@ -482,7 +505,6 @@ const server = createServer(async (req, res) => {
     });
   }
 
-  // --- 404 Fallback ---
   sendJson(res, 404, { error: "Not found" });
 });
 
@@ -490,8 +512,8 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`\n============================================================`);
   console.log(`⚡ Nexora Sovereign Console: http://127.0.0.1:${PORT}`);
   console.log(`🛡️ Storage: SQLite WAL [${dbPath}]`);
-  console.log(`🤖 AI Engine: Google Gemini 3.8 Flash (Free-Tier Strictly Enforced)`);
-  console.log(`🔑 Key Status: ${hasApiKey ? "GEMINI_API_KEY Configured" : "No Key Found (Local Demo Mode Ready)"}`);
+  console.log(`🤖 AI Engine: Google Gemini (Natural Language Tools + Free-Tier)`);
+  console.log(`🔑 Key Status: ${hasApiKey ? "GEMINI_API_KEY Configured" : "No Key Found"}`);
   console.log(`============================================================\n`);
 });
 
@@ -515,9 +537,6 @@ function renderHtml(): string {
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
-      --platypus-teal: #06b6d4;
-      --platypus-bill: #f59e0b;
-      --platypus-fedora: #78350f;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -571,6 +590,114 @@ function renderHtml(): string {
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* CHAT STREAM */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 640px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .chat-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+    }
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chat-bubble {
+      max-width: 82%;
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: #0284c7;
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+    .chat-bubble.assistant {
+      align-self: flex-start;
+      background: #1e293b;
+      color: #f3f4f6;
+      border: 1px solid #334155;
+      border-bottom-left-radius: 2px;
+    }
+    .tool-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--mono);
+      margin-top: 8px;
+      margin-right: 6px;
+      cursor: pointer;
+    }
+    .tool-output-details {
+      background: #0b1120;
+      border: 1px solid #1e293b;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: #94a3b8;
+      max-height: 140px;
+      overflow-y: auto;
+      margin-top: 6px;
+      white-space: pre-wrap;
+    }
+    .chat-input-bar {
+      padding: 16px 20px;
+      border-top: 1px solid var(--card-border);
+      background: #0f172a;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .chat-input {
+      flex: 1;
+      background: #0b1120;
+      border: 1px solid #334155;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-input:focus { border-color: var(--accent); }
+    .btn-send {
+      padding: 12px 20px;
+      background: var(--accent);
+      color: #0b1120;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .btn-send:hover { background: var(--accent-hover); }
+
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 950px) { .grid { grid-template-columns: 1fr; } }
     
@@ -583,45 +710,6 @@ function renderHtml(): string {
     }
     .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
 
-    .mode-selector {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 14px;
-      background: #0b1120;
-      padding: 4px;
-      border-radius: 8px;
-      border: 1px solid #1e293b;
-    }
-    .mode-tab {
-      flex: 1;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      text-align: center;
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      transition: all 0.2s;
-    }
-    .mode-tab.active { background: #1e293b; color: #fff; font-weight: 600; }
-
-    textarea {
-      width: 100%;
-      height: 90px;
-      background: #0b1120;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 12px;
-      color: #fff;
-      font-size: 14px;
-      resize: vertical;
-      margin-bottom: 10px;
-      outline: none;
-    }
-    textarea:focus { border-color: var(--accent); }
-
     .quick-pill {
       display: inline-block;
       font-size: 11px;
@@ -631,60 +719,9 @@ function renderHtml(): string {
       border-radius: 6px;
       cursor: pointer;
       margin-right: 6px;
-      margin-bottom: 8px;
       border: 1px dashed rgba(56, 189, 248, 0.4);
     }
     .quick-pill:hover { background: rgba(56, 189, 248, 0.2); }
-
-    button.btn-submit {
-      width: 100%;
-      padding: 10px 16px;
-      background: var(--accent);
-      color: #0b1120;
-      font-weight: 600;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: background 0.2s;
-    }
-    button.btn-submit:hover { background: var(--accent-hover); }
-
-    .approval-alert {
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 16px;
-      animation: pulse 2s infinite ease-in-out;
-    }
-    @keyframes pulse {
-      0%, 100% { border-color: rgba(245, 158, 11, 0.4); }
-      50% { border-color: rgba(245, 158, 11, 0.8); }
-    }
-    .approval-alert h3 { font-size: 14px; color: var(--warning); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-    .approval-meta { font-family: var(--mono); font-size: 12px; color: #cbd5e1; margin-bottom: 10px; }
-    .approval-actions { display: flex; gap: 8px; }
-    .btn-approve { background: var(--success); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-    .btn-deny { background: var(--danger); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-
-    .event-stream { max-height: 220px; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
-    .event-row { padding: 4px 6px; border-bottom: 1px solid #1e293b; display: flex; gap: 8px; }
-    .event-seq { color: var(--accent); font-weight: 600; min-width: 35px; }
-    .event-type { color: #f59e0b; min-width: 110px; }
-    .event-msg { color: var(--text-muted); word-break: break-all; }
-
-    .artifact-view {
-      background: #0b1120;
-      border: 1px solid #1e293b;
-      border-radius: 8px;
-      padding: 14px;
-      font-size: 13px;
-      max-height: 350px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      font-family: var(--mono);
-    }
 
     .status-pill {
       font-size: 11px;
@@ -695,7 +732,6 @@ function renderHtml(): string {
     }
     .status-queued { background: #334155; color: #cbd5e1; }
     .status-running { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
-    .status-waiting_for_approval { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
     .status-completed { background: rgba(16, 185, 129, 0.2); color: #10b981; }
     .status-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
 
@@ -779,97 +815,80 @@ function renderHtml(): string {
     <header>
       <div class="logo-group">
         <h1><span>⚡</span> Nexora Sovereign Console</h1>
-        <p>Unified Agent Operating System • Real-Time AI, Governed Computers & Document Canvas</p>
+        <p>Conversational Agent Living Inside Your Machine • Natural Language OS Assistant</p>
       </div>
       <div style="display: flex; gap: 8px; align-items: center;">
-        <span id="modeBadge" class="status-pill status-queued">● LOCAL DEMO MODE</span>
+        <span id="modeBadge" class="status-pill status-running">● AGENT READY</span>
         <span class="status-pill status-queued">SQLite WAL: data/nexora.db</span>
       </div>
     </header>
 
     <!-- NAVIGATION TABS -->
     <div class="nav-tabs">
-      <button class="nav-tab active" onclick="switchTab('tab-agent')">🤖 Agent & Tasks</button>
+      <button class="nav-tab active" onclick="switchTab('tab-chat')">💬 Natural Language Agent</button>
+      <button class="nav-tab" onclick="switchTab('tab-agent')">⚡ Batch Tasks</button>
       <button class="nav-tab" onclick="switchTab('tab-canvas')">📄 Document Canvas</button>
       <button class="nav-tab" onclick="switchTab('tab-computer')">💻 Governed Computer</button>
       <button class="nav-tab" onclick="switchTab('tab-mcp')">🔌 MCP Ecosystem</button>
       <button class="nav-tab" onclick="switchTab('tab-fleet')">🌐 Runner Fleet</button>
     </div>
 
-    <!-- TAB 1: AGENT & TASKS -->
-    <div id="tab-agent" class="tab-content active">
-      <div class="grid">
-        <!-- LEFT: Input & History -->
-        <div>
-          <div class="card" style="margin-bottom: 20px;">
-            <h2>1. Submit Task to Agent</h2>
-            
-            <div class="mode-selector">
-              <button id="tabDemo" class="mode-tab active" onclick="setMode('demo')">🧪 Local Demo Mode (Zero API Key)</button>
-              <button id="tabLive" class="mode-tab" onclick="setMode('live')">⚡ Live Gemini 3.8 Flash</button>
+    <!-- TAB 0: CHAT WITH AGENT (PRIMARY CONVERSATIONAL EXPERIENCE) -->
+    <div id="tab-chat" class="tab-content active">
+      <div class="chat-container">
+        <div class="chat-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 20px;">🤖</span>
+            <div>
+              <div style="font-weight: 700; font-size: 15px;">Nexora Living Assistant</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Autonomous local agent with direct computer tool execution (Files, Shell, Status)</div>
             </div>
-            
-            <div id="liveWarning" style="display:none; margin-bottom: 12px; font-size: 12px; color: var(--warning); padding: 8px; background: rgba(245, 158, 11, 0.1); border-radius: 6px;">
-              ⚠️ Live AI mode calls Gemini 3.8 Flash using free-tier tokens. Zero paid overages.
-            </div>
-
-            <textarea id="taskPrompt" placeholder="What should Nexora do?">Create a short introduction to Nexora.</textarea>
-            
-            <div style="margin-bottom: 12px;">
-              <span class="quick-pill" onclick="setPrompt('Create a short introduction to Nexora.')">🎯 Demo: Intro</span>
-              <span class="quick-pill" onclick="setPrompt('Write a clean TypeScript rate-limiter with sliding window algorithm.')">⚡ Live: Code Service</span>
-              <span class="quick-pill" onclick="setPrompt('Analyze system architecture and list top 3 resilience guarantees.')">🔍 Live: Analysis</span>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; color: var(--text-muted);">
-              <input type="checkbox" id="chkApproval" checked>
-              <label for="chkApproval">Require human owner authorization before saving artifact</label>
-            </div>
-
-            <button id="btnSubmit" class="btn-submit" onclick="submitTask()">Execute Durable Task</button>
           </div>
-
-          <div class="card">
-            <h2>2. Persisted Task History</h2>
-            <div id="taskList" style="max-height: 180px; overflow-y: auto;">Loading tasks...</div>
+          <div>
+            <button onclick="clearChatHistory()" style="background: transparent; border: 1px solid #334155; color: var(--text-muted); padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">Clear Chat</button>
           </div>
         </div>
 
-        <!-- RIGHT: Worker Activity & Result -->
-        <div>
-          <!-- Approval Alert Card -->
-          <div id="approvalCard" class="approval-alert" style="display: none;">
-            <h3>⚠️ Action Authorization Required</h3>
-            <p style="font-size: 12px; margin-bottom: 6px;">Worker paused: mutating action requires owner approval under supervised governance.</p>
-            <div id="approvalMeta" class="approval-meta"></div>
-            <div class="approval-actions">
-              <button class="btn-approve" onclick="resolveApproval(true)">✅ Approve Action</button>
-              <button class="btn-deny" onclick="resolveApproval(false)">❌ Deny Action</button>
-            </div>
+        <div id="chatMessages" class="chat-messages">
+          <div class="chat-bubble assistant">
+            👋 <strong>Hi, I'm Nexora!</strong> I live inside your computer as your autonomous personal agent.<br><br>
+            You can ask me <em>any question or assign any task in natural language</em>:
+            <ul style="margin: 8px 0 8px 20px; font-size: 13px;">
+              <li>Inspect files, list folders, or read documents on your machine</li>
+              <li>Execute safe commands like <code>git status</code>, check Node versions, or test scripts</li>
+              <li>Check system memory, CPU architecture, uptime, or current time</li>
+              <li>Ask general questions about architecture, code, math, or workflows!</li>
+            </ul>
+            What would you like me to do?
           </div>
+        </div>
 
-          <div class="card" style="margin-bottom: 20px;">
-            <h2>
-              <span>Active Worker Activity</span>
-              <span id="activeStatusPill" class="status-pill status-queued">QUEUED</span>
-            </h2>
-            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px;">
-              <div><strong>Task:</strong> <span id="activeTitle">-</span></div>
-              <div><strong>Active Run:</strong> <span id="activeRunId" style="font-family: var(--mono);">-</span></div>
-            </div>
-            <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Monotonic Sequence Events:</div>
-            <div id="eventStream" class="event-stream">
-              <div style="color: var(--text-muted); padding: 8px;">No active task executing.</div>
-            </div>
-          </div>
+        <div style="padding: 10px 20px; background: #0b1120; border-top: 1px solid #1e293b; display: flex; gap: 8px; overflow-x: auto;">
+          <span class="quick-pill" onclick="sendQuickPrompt('What files and folders are in this project directory?')">📁 List directory files</span>
+          <span class="quick-pill" onclick="sendQuickPrompt('Check current system memory, platform, and uptime')">💻 Check system status</span>
+          <span class="quick-pill" onclick="sendQuickPrompt('Run git status and show me what branch I am on')">🔍 Check git status</span>
+          <span class="quick-pill" onclick="sendQuickPrompt('Read package.json and summarize what npm scripts are available')">📖 Inspect package.json</span>
+          <span class="quick-pill" onclick="sendQuickPrompt('Explain how Nexora protects my computer from dangerous commands')">🛡️ Explain security governance</span>
+        </div>
 
-          <div class="card">
-            <h2>
-              <span>Saved Result & Artifact</span>
-              <span id="artifactBadge" style="font-size: 11px; color: var(--accent); font-weight: normal;"></span>
-            </h2>
-            <div id="artifactView" class="artifact-view">No artifact generated yet. Submit a task to view output.</div>
-          </div>
+        <div class="chat-input-bar">
+          <input type="text" id="chatInput" class="chat-input" placeholder="Ask Nexora anything or assign any task in natural language..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+          <button id="btnSendChat" class="btn-send" onclick="sendChatMessage()">Send Message</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 1: BATCH TASKS -->
+    <div id="tab-agent" class="tab-content">
+      <div class="grid">
+        <div class="card">
+          <h2>1. Submit Batch Task</h2>
+          <textarea id="taskPrompt" style="width: 100%; height: 90px; background: #0b1120; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #fff; margin-bottom: 10px;">Create a short introduction to Nexora.</textarea>
+          <button id="btnSubmit" class="btn-send" style="width: 100%;" onclick="submitTask()">Execute Durable Task</button>
+        </div>
+        <div class="card">
+          <h2>2. Saved Result & Artifact</h2>
+          <div id="artifactView" style="background: #0b1120; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; font-size: 13px; max-height: 250px; overflow-y: auto; font-family: var(--mono);">No artifact generated yet.</div>
         </div>
       </div>
     </div>
@@ -890,10 +909,10 @@ function renderHtml(): string {
             <span id="pageRevBadge" class="status-pill status-queued">REV 1</span>
           </h2>
           <input type="text" id="pageTitleInput" placeholder="Page Title" style="width: 100%; background: #0b1120; border: 1px solid #334155; padding: 8px; border-radius: 6px; color: #fff; margin-bottom: 10px;">
-          <textarea id="pageContentInput" style="height: 250px; font-family: var(--mono); font-size: 13px;" placeholder="Markdown content..."></textarea>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);">Optimistic Concurrency: Protected against conflicting overwrites</span>
-            <button onclick="saveCurrentPage()" class="btn-approve">Save Changes</button>
+          <textarea id="pageContentInput" style="width: 100%; height: 250px; background: #0b1120; border: 1px solid #334155; padding: 8px; border-radius: 6px; color: #fff; font-family: var(--mono); font-size: 13px;" placeholder="Markdown content..."></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+            <span style="font-size: 12px; color: var(--text-muted);">Optimistic Concurrency Protection</span>
+            <button onclick="saveCurrentPage()" class="btn-send" style="padding: 6px 14px;">Save Changes</button>
           </div>
         </div>
       </div>
@@ -915,7 +934,7 @@ function renderHtml(): string {
               <option value="exec_rm_root">exec: rm -rf / (Prohibited Dangerous Command)</option>
               <option value="exec_safe">exec: node -v (Safe Command Execution)</option>
             </select>
-            <button onclick="testPolicyEvaluation()" class="btn-submit" style="padding: 8px 12px;">Evaluate Action with Policy Engine</button>
+            <button onclick="testPolicyEvaluation()" class="btn-send" style="padding: 8px 12px;">Evaluate Action with Policy Engine</button>
           </div>
           <div>
             <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Policy Evaluation Result:</div>
@@ -931,10 +950,7 @@ function renderHtml(): string {
     <div id="tab-mcp" class="tab-content">
       <div class="card">
         <h2>Multi-Host Model Context Protocol (MCP) Hub</h2>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-          Connect your favorite coding agent directly into Nexora's durable ledger via native stdio MCP.
-        </p>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px;">
           <div>
             <h3 style="font-size: 13px; color: var(--accent); margin-bottom: 8px;">Google Antigravity Config:</h3>
             <pre style="background: #0b1120; padding: 12px; border-radius: 6px; font-size: 11px; overflow-x: auto; color: #cbd5e1;">{
@@ -960,17 +976,10 @@ function renderHtml(): string {
     <div id="tab-fleet" class="tab-content">
       <div class="card">
         <h2>Outbound Runner Fleet & Autonomous Schedules</h2>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-          Pair secondary laptops and nodes via outbound-only connections with short pairing codes.
-        </p>
-        <button onclick="generatePairingCode()" class="btn-submit" style="width: auto; padding: 8px 16px; margin-bottom: 14px;">Generate 8-Character Pairing Code</button>
+        <button onclick="generatePairingCode()" class="btn-send" style="width: auto; padding: 8px 16px; margin-bottom: 14px;">Generate 8-Character Pairing Code</button>
         <div id="pairingCodeBox" style="font-family: var(--mono); font-size: 13px; color: var(--success); margin-bottom: 14px;"></div>
-        <div style="font-size: 12px; color: var(--text-muted);">
-          Autonomous jobs execute in <strong>Asia/Kolkata</strong> timezone under the Quiet Proactivity protocol (zero spam pings).
-        </div>
       </div>
     </div>
-
   </div>
 
   <!-- ========================================================
@@ -978,42 +987,31 @@ function renderHtml(): string {
        ======================================================== -->
   <div class="agent-mascot-container">
     <div id="agentSpeechBubble" class="agent-speech-bubble">
-      Hi! I'm Nexora. Type a prompt or run the demo to see me in action!
+      I'm Nexora, living inside your computer. Ask me anything!
     </div>
     <div id="agentMascot" class="agent-mascot-avatar" onclick="pokeMascot()" title="Click to interact with Nexora!">
       <svg viewBox="0 0 100 100" width="100%" height="100%">
-        <!-- Platypus Tail -->
         <ellipse cx="20" cy="70" rx="14" ry="7" fill="#b45309" transform="rotate(-20 20 70)"/>
-        <!-- Platypus Body (Teal) -->
         <ellipse cx="50" cy="58" rx="28" ry="26" fill="#06b6d4"/>
-        <!-- Belly Highlight -->
         <ellipse cx="50" cy="62" rx="18" ry="16" fill="#22d3ee" opacity="0.6"/>
-        <!-- Feet -->
         <ellipse cx="38" cy="84" rx="8" ry="4" fill="#f59e0b"/>
         <ellipse cx="62" cy="84" rx="8" ry="4" fill="#f59e0b"/>
-        <!-- Bill / Beak -->
         <ellipse cx="50" cy="55" rx="18" ry="8" fill="#f59e0b"/>
         <ellipse cx="45" cy="53" rx="1.5" ry="1.5" fill="#78350f"/>
         <ellipse cx="55" cy="53" rx="1.5" ry="1.5" fill="#78350f"/>
-        <!-- Eyes -->
         <circle id="eyeLeft" cx="42" cy="42" r="5" fill="#ffffff"/>
         <circle id="pupilLeft" cx="43" cy="42" r="2.5" fill="#0b1120"/>
         <circle id="eyeRight" cx="58" cy="42" r="5" fill="#ffffff"/>
         <circle id="pupilRight" cx="57" cy="42" r="2.5" fill="#0b1120"/>
-        <!-- Fedora Hat (Agent Mascot Icon) -->
         <ellipse cx="50" cy="34" rx="22" ry="5" fill="#78350f"/>
         <path d="M36 34 L38 20 Q50 17 62 20 L64 34 Z" fill="#78350f"/>
-        <!-- Fedora Black Ribbon -->
         <path d="M37 32 L38 28 Q50 26 62 28 L63 32 Z" fill="#18181b"/>
       </svg>
     </div>
   </div>
 
   <script>
-    let currentMode = 'demo';
     let activeTaskId = null;
-    let pendingApprovalId = null;
-    let pollInterval = null;
     let currentPageId = null;
     let currentPageRev = 1;
 
@@ -1026,10 +1024,10 @@ function renderHtml(): string {
 
     function pokeMascot() {
       const phrases = [
-        "I'm awake and ready! What task shall we execute?",
-        "My SQLite WAL engine is running with zero corruption risk!",
+        "I'm awake and ready! Ask me anything or tell me to run a command.",
+        "I live right here on your computer!",
         "Governed action boundaries are active. Your machine is safe!",
-        "Gemini 3.8 Flash is standing by under strict free-only routing."
+        "Gemini is standing by with local tools ready."
       ];
       const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
       setMascotMood('celebrating', randomPhrase);
@@ -1044,159 +1042,86 @@ function renderHtml(): string {
       if (tabId === 'tab-canvas') loadPages();
     }
 
-    function setMode(mode) {
-      currentMode = mode;
-      document.getElementById('tabDemo').className = 'mode-tab' + (mode === 'demo' ? ' active' : '');
-      document.getElementById('tabLive').className = 'mode-tab' + (mode === 'live' ? ' active' : '');
-      const badge = document.getElementById('modeBadge');
-      if (mode === 'demo') {
-        badge.className = 'status-pill status-queued';
-        badge.innerText = '● LOCAL DEMO MODE';
-        document.getElementById('liveWarning').style.display = 'none';
-        setMascotMood('idle', "Switched to Local Demo mode. Zero API keys required!");
-      } else {
-        badge.className = 'status-pill status-running';
-        badge.innerText = '● LIVE GEMINI 3.8 FLASH';
-        document.getElementById('liveWarning').style.display = 'block';
-        setMascotMood('idle', "Switched to Live AI mode. Ready to call Gemini 3.8 Flash!");
-      }
-    }
+    // --- CONVERSATIONAL CHAT SYSTEM ---
+    async function sendChatMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
 
-    function setPrompt(txt) {
-      document.getElementById('taskPrompt').value = txt;
-      setMascotMood('idle', "Loaded preset prompt!");
-    }
+      input.value = '';
+      appendChatMessage('user', text);
 
-    async function submitTask() {
-      const prompt = document.getElementById('taskPrompt').value.trim();
-      if (!prompt) return alert('Please enter a task prompt.');
+      setMascotMood('thinking', "Thinking... Analyzing request and consulting tools.");
 
-      const requireApproval = document.getElementById('chkApproval').checked;
-      const btn = document.getElementById('btnSubmit');
+      const btn = document.getElementById('btnSendChat');
       btn.disabled = true;
-      btn.innerText = 'Submitting...';
-
-      setMascotMood('thinking', "Submitting task to SQLite ledger...");
+      btn.innerText = 'Working...';
 
       try {
-        const res = await fetch('/api/tasks', {
+        const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, mode: currentMode, requireApproval })
+          body: JSON.stringify({ message: text })
         });
         const data = await res.json();
-        activeTaskId = data.taskId;
 
-        setMascotMood('thinking', "Lease claimed! Worker is executing turn...");
-        startPolling();
+        if (data.error) {
+          appendChatMessage('assistant', '⚠️ Error: ' + data.error);
+          setMascotMood('alert', "Error occurred.");
+        } else {
+          appendChatMessage('assistant', data.response, data.toolCalls);
+          setMascotMood('celebrating', "Here is what I found!");
+          setTimeout(() => setMascotMood('idle'), 3000);
+        }
       } catch (err) {
-        alert('Failed to submit task: ' + err.message);
-        setMascotMood('alert', "Failed to submit task.");
+        appendChatMessage('assistant', '⚠️ Network error: ' + err.message);
+        setMascotMood('alert', "Network error.");
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Execute Durable Task';
+        btn.innerText = 'Send Message';
       }
     }
 
-    function startPolling() {
-      if (pollInterval) clearInterval(pollInterval);
-      pollStatus();
-      pollInterval = setInterval(pollStatus, 1000);
+    function sendQuickPrompt(prompt) {
+      document.getElementById('chatInput').value = prompt;
+      sendChatMessage();
     }
 
-    async function pollStatus() {
-      if (!activeTaskId) return;
-      try {
-        const res = await fetch('/api/tasks/' + activeTaskId);
-        if (!res.ok) return;
-        const data = await res.json();
+    function appendChatMessage(role, text, toolCalls) {
+      const messagesDiv = document.getElementById('chatMessages');
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble ' + role;
 
-        // Update active run header
-        document.getElementById('activeTitle').innerText = data.task.title;
-        document.getElementById('activeRunId').innerText = data.run ? data.run.id : 'Pending';
-
-        const runStatus = data.run ? data.run.status : data.task.status;
-        const pill = document.getElementById('activeStatusPill');
-        pill.className = 'status-pill status-' + runStatus;
-        pill.innerText = runStatus.toUpperCase();
-
-        // Mascot expressions
-        if (runStatus === 'running') {
-          setMascotMood('thinking', "Thinking... Processing turn events.");
-        } else if (runStatus === 'waiting_for_approval') {
-          setMascotMood('alert', "⚠️ Action paused! I need your approval to proceed.");
-        } else if (runStatus === 'completed') {
-          setMascotMood('celebrating', "🎉 Done! Artifact created and verified.");
-        }
-
-        // Render monotonic events
-        const streamDiv = document.getElementById('eventStream');
-        if (data.events && data.events.length > 0) {
-          streamDiv.innerHTML = data.events.map(ev => {
-            let msg = '';
-            try {
-              const p = JSON.parse(ev.payload);
-              msg = p.message || p.label || p.item || JSON.stringify(p);
-            } catch { msg = ev.payload; }
-            return '<div class="event-row">' +
-              '<span class="event-seq">#' + ev.seq + '</span>' +
-              '<span class="event-type">' + ev.type + '</span>' +
-              '<span class="event-msg">' + escapeHtml(msg) + '</span>' +
+      let toolHtml = '';
+      if (toolCalls && toolCalls.length > 0) {
+        toolHtml = '<div style="margin-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 6px;">' +
+          toolCalls.map((tc, idx) => {
+            const outId = 'tool_out_' + Date.now() + '_' + idx;
+            return '<div style="margin-bottom: 6px;">' +
+              '<span class="tool-chip" onclick="toggleToolOutput(\'' + outId + '\')">🛠️ Tool: ' + escapeHtml(tc.name) + ' (' + escapeHtml(JSON.stringify(tc.args)) + ') ▾</span>' +
+              '<div id="' + outId + '" class="tool-output-details" style="display: none;">' + escapeHtml(tc.output || 'No output') + '</div>' +
             '</div>';
-          }).join('');
-          streamDiv.scrollTop = streamDiv.scrollHeight;
-        }
-
-        // Render Artifact
-        if (data.artifactContent) {
-          document.getElementById('artifactView').innerText = data.artifactContent;
-          document.getElementById('artifactBadge').innerText = 'SHA-256: ' + (data.artifact?.sha256?.slice(0, 12) || '') + '...';
-        }
-
-        // Check Pending Approvals
-        const statusRes = await fetch('/api/status');
-        const sys = await statusRes.json();
-        if (sys.pendingApproval) {
-          pendingApprovalId = sys.pendingApproval.id;
-          const card = document.getElementById('approvalCard');
-          card.style.display = 'block';
-          document.getElementById('approvalMeta').innerText =
-            'Action: ' + sys.pendingApproval.action + ' | Resource: ' + sys.pendingApproval.resource;
-        } else {
-          document.getElementById('approvalCard').style.display = 'none';
-        }
-
-        if (runStatus === 'completed' || runStatus === 'failed') {
-          clearInterval(pollInterval);
-          loadTasksList();
-        }
-      } catch (e) {
-        console.error('Polling error', e);
+          }).join('') +
+        '</div>';
       }
+
+      bubble.innerHTML = (role === 'user' ? '<strong>You:</strong> ' : '<strong>Nexora:</strong> ') +
+        formatMarkdown(text) + toolHtml;
+
+      messagesDiv.appendChild(bubble);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
-    async function resolveApproval(approved) {
-      if (!pendingApprovalId) return;
-      try {
-        await fetch('/api/approvals/' + pendingApprovalId, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approved })
-        });
-        document.getElementById('approvalCard').style.display = 'none';
-        setMascotMood(approved ? 'thinking' : 'idle', approved ? "Approval received! Executing mutation." : "Action denied.");
-        startPolling();
-      } catch (err) {
-        alert('Failed to resolve approval: ' + err.message);
-      }
+    function toggleToolOutput(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
     }
 
-    async function loadTasksList() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        // Trigger list reload
-      } catch {}
+    async function clearChatHistory() {
+      await fetch('/api/chat/clear', { method: 'POST' });
+      document.getElementById('chatMessages').innerHTML =
+        '<div class="chat-bubble assistant">🧹 Chat history cleared. What can I do for you?</div>';
+      setMascotMood('idle', "Ready for a fresh start!");
     }
 
     // --- CANVAS TABS ---
@@ -1230,7 +1155,6 @@ function renderHtml(): string {
       if (content !== undefined) {
         document.getElementById('pageContentInput').value = content;
       } else {
-        // Fetch fresh
         fetch('/api/pages').then(r => r.json()).then(d => {
           const pg = d.pages.find(p => p.id === id);
           if (pg) document.getElementById('pageContentInput').value = pg.content;
@@ -1300,6 +1224,24 @@ function renderHtml(): string {
       const data = await res.json();
       document.getElementById('pairingCodeBox').innerText =
         'Pairing Code Generated: ' + data.pairing.code + ' (Expires in 5 minutes)';
+    }
+
+    async function submitTask() {
+      const prompt = document.getElementById('taskPrompt').value.trim();
+      if (!prompt) return;
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, mode: 'demo', requireApproval: false })
+      });
+      const data = await res.json();
+      activeTaskId = data.taskId;
+      alert('Task submitted! ID: ' + activeTaskId);
+    }
+
+    function formatMarkdown(txt) {
+      if (!txt) return '';
+      return escapeHtml(txt).split('\n').join('<br>');
     }
 
     function escapeHtml(str) {
